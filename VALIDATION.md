@@ -12,6 +12,9 @@ This file records the runs behind the results below, and what came out. Every re
 | Real Codex → CodexProbe → OpenAI, signed in with ChatGPT: a fixed one-word reply | **PASS**, after one recorded FAIL that exposed a bug, and its fix | Phase 3 |
 | Real Codex → CodexProbe → OpenAI: a coding task | **PASS**: 3 calls, all recorded; the files were written, and their test passes | Phase 3 |
 | Real Codex → CodexProbe → a local Qwen on Ollama: a fixed one-word reply | **PASS**: the request reached the local model byte for byte, and the reply was recorded in full | Phase 4 |
+| Real Codex → CodexProbe → Qwen2.5-Coder 1.5B with an adapted model template: create one file | **PASS** in 3 of 3 runs (greedy decoding: the same output each time) | Additional local model validation |
+| Ollama's `/v1/responses` → Qwen3.5 2B with its native tool parser, without Codex: a structured tool call for a recorded Codex request, then a reply to a simulated tool output | **PASS** | Additional local model validation |
+| Real Codex → CodexProbe → Qwen3.5 2B: create one file | **PASS** in 1 of 2 runs | Additional local model validation |
 
 ## Environment
 
@@ -203,7 +206,35 @@ In the mock demo, Codex exited with 0 after 2.1 s. Three calls were recorded, al
 
 After this run, only `README.md` and `VALIDATION.md` changed.
 
-**Which code the real runs used.** The two OpenAI runs after the fix (`quickstart-openai-20261024-195010` and `quickstart-openai-20261024-195557`) used the code with that fix. The later changes do not touch the path those runs took: the openai mode now refuses a CODEX_HOME that holds a `config.toml`, before anything runs; and some comments, docstrings and tests changed. The Qwen run of Phase 4 predates the `--task` option. Neither real backend was run again on the final code.
+**Which code the real runs used.** The two OpenAI runs after the fix (`quickstart-openai-20261024-195010` and `quickstart-openai-20261024-195557`) used the code with that fix. The later changes do not touch the path those runs took: the openai mode now refuses a CODEX_HOME that holds a `config.toml`, before anything runs; and some comments, docstrings and tests changed. The Qwen run of Phase 4 predates the `--task` option. Neither of these quickstart runs was repeated on the final code; the additional local model runs below did use the final code.
+
+## Additional local model validation
+
+These runs check whether a small local model's tool call is executed by the real Codex through CodexProbe. They were made on 2026-10-25 with the final code, from the Phase 5 clean copy, through a separate test script. The script drives `ProxyRecorder` with the package's `codex_run` helpers. It judges each run with five of the quickstart's checks (backend reached, response captured, a structured `exec_command` call, schema-valid arguments, the tool executed and its output sent back), plus its own check of the file's content.
+
+Neither the script nor the adapted Qwen2.5-Coder Modelfile is in this repository, so these runs cannot be repeated from it as is; the Modelfile changes are listed below. CodexProbe's code was not changed. In every run through CodexProbe, each call was recorded as `completed`. For the Qwen3.5 runs, the script also checked that the log read back from disk equals the list `stop()` returned.
+
+The task given to Codex: `Use the exec_command tool to create a file named hello.txt that contains exactly QWEN_TOOL_OK.` (`HELLO_QWEN35` for Qwen3.5).
+
+**Qwen2.5-Coder 1.5B, with an adapted model template.** Only the model side changed; the requests Codex sends did not. Compared with `examples/ollama/Modelfile`:
+- greedy decoding (`top_k 1`) and an output cap (`num_predict 1024`). According to Ollama's source (not measured here), its Responses path uses temperature 1.0 when a request sets none, and Codex sets none;
+- tool calls asked for, and shown in the history, as JSON inside a ```` ```json ```` block, the form this model writes. Ollama's template-based parser then turns that block into a `function_call`;
+- two short `exec_command` examples (listing files, and writing a file with `python -c`) and two rules (one command per call; a short reply when the task is done); `write_stdin` left out of the tool list that the model sees; and, after each tool output, one sentence asking for a short reply if the task is done.
+
+| Run | Result |
+|---|---|
+| Through CodexProbe, 3 runs | **PASS, 3 of 3.** In each run the model made one structured `exec_command` call, `echo QWEN_TOOL_OK > hello.txt`, with schema-valid arguments. Codex ran it in the sandbox (exit code 0) and sent the output back; the model then replied and ended the turn. 2 LLM calls per run, 2.4–3.0 s. `hello.txt` holds `QWEN_TOOL_OK`, in UTF-16, as Windows PowerShell's `>` writes it. With greedy decoding all three runs gave the same output, and the template had been adjusted on this same task |
+| Codex straight to Ollama, without CodexProbe, 1 run | **PASS**: the same command and the same file |
+
+**Qwen3.5 2B** (`qwen3.5:2b-q4_K_M`, digest `1e2d21a4…f1e7`, 1.9 GB), with Ollama's native `qwen3.5` renderer and tool parser. The only change is `num_ctx 16384`. The model ran entirely on the GPU (`ollama ps`: 1.8 GB, 100% GPU).
+- **Direct to Ollama's `/v1/responses`, without Codex: PASS.** A recorded Codex request gave a structured `exec_command` call with schema-valid arguments. Sent back with a simulated tool output, the model finished with a message and did not repeat the call.
+- **Real Codex → CodexProbe, the hello.txt task: PASS in 1 of 2 runs.** In the passing run, 9 commands failed before one wrote the file, most of them because the model passed a wrong `workdir`; Codex reported each error back (18 tool calls in all). In the other run, the model's PowerShell command (`Write-Host … | Out-File`) left the file empty.
+
+**Scope.** These results cover one small task: creating one file with a tool call. They are not a completed coding task. With these 1.5B and 2B models, the multi-file task (`calc.py`, a test, then running it) did not complete on this Windows machine:
+- the 2B model asked Codex to run `bash`, which failed in the Windows sandbox; it wrote `&&` and heredocs, which Windows PowerShell 5.1 rejects; and it passed invalid tool arguments;
+- the 1.5B model wrote a tool call as invalid JSON, which Ollama dropped, and the `\n` it wrote inside PowerShell single quotes stayed literal, which broke the files.
+
+Also, Ollama's `qwen3.5` renderer drops `developer` messages, so Codex's own instructions do not reach that model.
 
 ## Not tested
 

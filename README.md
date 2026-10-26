@@ -22,14 +22,17 @@ It is a solution to [Task 7](https://github.com/STAR-Computing/ProgrammingTask/b
 
 ## Results
 
-| Run | Result |
+| What | Result |
 |---|---|
-| 349 offline tests, in a fresh install from a clean copy | **PASS** |
+| Core proxy: the public API, request and response bodies forwarded byte for byte, the backend switched by config alone | **PASS** ([VALIDATION.md](VALIDATION.md), Phases 1–3) |
+| Streaming and logging: live SSE relay, complete reassembly, one JSONL record per LLM call, read back with `load_session()` | **PASS** ([VALIDATION.md](VALIDATION.md), Phases 1–3) |
+| Automated tests, in a fresh install from a clean copy | **PASS**: 349 passed |
 | Real Codex → CodexProbe → a scripted mock backend (not a model): a small coding task | **PASS**. Every recorded body is byte-identical to what the mock received and sent |
-| Real Codex → CodexProbe → OpenAI, signed in with ChatGPT: a fixed one-word reply, and a coding task | **PASS**. The coding task took 3 LLM calls, all recorded in full. The first reply run failed on a bug, since fixed: the backend's stream had no `Content-Type` |
-| Real Codex → CodexProbe → a local Qwen on Ollama: a fixed one-word reply | **PASS**. The request reached the local model byte for byte, and the reply was recorded in full |
+| Real Codex → CodexProbe → OpenAI, signed in with ChatGPT: a one-word reply, and a coding task | **PASS**. The coding task took 3 LLM calls, all recorded in full |
+| Real Codex → CodexProbe → a local Qwen on Ollama: connection and recording | **PASS**. The request reached the local model byte for byte, and the reply was recorded in full |
+| Real Codex → CodexProbe → a local Qwen: the model's tool call creates a file | **Verified in additional experiments**, for one simple file ([VALIDATION.md](VALIDATION.md#additional-local-model-validation)) |
 
-The OpenAI and Qwen runs used earlier versions of the quickstart, and were not repeated on the final code. [VALIDATION.md](VALIDATION.md) has the commands, outputs and evidence.
+The OpenAI runs and the one-word Qwen run used earlier versions of the quickstart, and were not repeated on the final code. The local tool-call runs used the final code, but through a separate test script that is not published, and with model settings other than `examples/ollama/Modelfile`; the quickstart does not reproduce them. [VALIDATION.md](VALIDATION.md) has the evidence for every row.
 
 ## Quick start
 
@@ -299,6 +302,7 @@ Exit codes: 0 PASS, 1 FAIL, 2 bad arguments, 3 BLOCKED. BLOCKED means that somet
 ## Limitations
 
 - Tested on one Windows 11 machine. macOS and Linux were not tested.
+- With the small local models that fit the test machine's 4 GB GPU (1.5B and 2B parameters), tool execution was verified only for creating one file ([VALIDATION.md](VALIDATION.md#additional-local-model-validation)).
 - OpenAI was tested only through a ChatGPT sign-in, not with an API key. To use a `base_url`, Codex needs a custom provider, which talks HTTP and SSE rather than WebSockets. So a capture is not identical to the traffic of Codex's built-in OpenAI provider.
 - Logs hold complete prompts, which may include workspace files. With OpenAI, the response headers also carry account details, such as the plan and usage. Credential headers are redacted, but keep logs private.
 - CodexProbe ignores `HTTP_PROXY` and `HTTPS_PROXY` (httpx `trust_env=False`), so it cannot reach OpenAI on a network that requires an outbound proxy. This was not tested.

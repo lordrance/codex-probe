@@ -1,0 +1,4 @@
+# Ollama keeps a Modelfile's line endings in the model's template, and the models of the
+# final validation runs were built from these files with Windows (CRLF) line endings.
+# They are stored that way, and git must not convert them.
+examples/ollama/Modelfile* -text

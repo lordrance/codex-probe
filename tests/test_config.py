@@ -37,7 +37,7 @@ def full() -> Config:
             "auth": {"mode": "env", "env_var": "OPENAI_API_KEY"},
         },
         "listen": {"host": "127.0.0.1", "port": 8135},
-        "log_dir": "E:/codexprobe-private/runs",
+        "log_dir": "D:/codexprobe/runs",
         "seed": 7,
     }
 
@@ -64,7 +64,7 @@ def test_full_config_is_loaded_field_by_field() -> None:
             wire_api="responses",
             auth=AuthConfig(mode="env", env_var="OPENAI_API_KEY"),
         ),
-        log_dir=Path("E:/codexprobe-private/runs"),
+        log_dir=Path("D:/codexprobe/runs"),
         listen=ListenConfig(host="127.0.0.1", port=8135),
         seed=7,
     )

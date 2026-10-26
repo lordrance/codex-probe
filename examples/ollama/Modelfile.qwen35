@@ -1,0 +1,13 @@
+# CodexProbe: qwen3.5:2b-q4_K_M for Codex through Ollama's /v1/responses.
+# Pull the base model, then create this one:
+#   ollama pull qwen3.5:2b-q4_K_M
+#   ollama create codexprobe-qwen3.5:2b -f Modelfile.qwen35
+#
+# One change from the base model: num_ctx 16384. On the test GPU (4 GB), Ollama's default
+# context was 4096 tokens. The first Codex request is only about 1,500 tokens, because
+# Ollama's qwen3.5 renderer drops Codex's developer messages, but every tool call makes
+# the next request longer: in one run of examples/tool_call_check.py, a request reached
+# 13,997 tokens, and Codex then compacted the conversation.
+# The renderer, the tool parser and the sampling parameters stay Ollama's own.
+FROM qwen3.5:2b-q4_K_M
+PARAMETER num_ctx 16384

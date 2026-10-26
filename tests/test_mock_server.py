@@ -32,8 +32,8 @@ from codex_probe.mock_server import (
 )
 from codex_probe.streaming import ResponseStreamAssembler, StreamResult
 
-# Copied verbatim from Codex 0.164.0's test helpers, as quoted in
-# planning/research/notes/codex-protocol.md (Q7 (a) and (b)).
+# The exact SSE that Codex 0.164.0's own test helpers produce for these events
+# (codex-rs/core/tests/common/responses.rs, tag rust-v0.164.0).
 CODEX_MESSAGE_SSE = (
     'event: response.created\n'
     'data: {"type":"response.created","response":{"id":"resp-1"}}\n'

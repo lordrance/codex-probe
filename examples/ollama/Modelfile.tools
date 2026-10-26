@@ -1,0 +1,90 @@
+# CodexProbe: qwen2.5-coder:1.5b with a tool-call template, for examples/tool_call_check.py.
+# Create it with:  ollama create codexprobe-qwen2.5-coder-tools:1.5b -f Modelfile.tools
+#
+# It keeps the developer-message fix and num_ctx 16384 of Modelfile, and changes only the
+# model side so that this small model's tool calls reach Codex as function calls. The
+# requests Codex sends are not changed.
+# - top_k 1, greedy decoding. Ollama's Responses path uses temperature 1.0 when a request
+#   sets none, and Codex sets none.
+# - num_predict 1024, a cap on each reply, because greedy decoding can repeat until the
+#   context is full.
+# - Tool calls are asked for, and shown in the history, as JSON in a ```json block, the
+#   form this model writes. Ollama takes the tool-call tag from the template, here
+#   ```json, and parses the block as a tool call.
+# - The tool list leaves out write_stdin. Two exec_command examples and two rules follow
+#   it. After each tool output, a short note says: if the task is done, reply in one
+#   short sentence; otherwise make the next call.
+# Like Modelfile, this file keeps Windows (CRLF) line endings (see .gitattributes):
+# Ollama keeps them in the template, and the validated model was built with them.
+FROM qwen2.5-coder:1.5b
+PARAMETER num_ctx 16384
+PARAMETER top_k 1
+PARAMETER num_predict 1024
+TEMPLATE """{{- if .Suffix }}<|fim_prefix|>{{ .Prompt }}<|fim_suffix|>{{ .Suffix }}<|fim_middle|>
+{{- else if .Messages }}
+{{- $instructions := .System }}
+{{- range .Messages }}{{ if eq .Role "developer" }}{{ if $instructions }}{{ $instructions = printf "%s\n\n%s" $instructions .Content }}{{ else }}{{ $instructions = .Content }}{{ end }}{{ end }}{{ end }}
+{{- if or $instructions .Tools }}<|im_start|>system
+{{- if $instructions }}
+{{ $instructions }}
+{{- end }}
+{{- if .Tools }}
+
+# Tools
+
+You may call one or more functions to assist with the user query.
+
+You are provided with function signatures within <tools></tools>:
+<tools>
+{{- range .Tools }}{{ if ne .Function.Name "write_stdin" }}
+{"type": "function", "function": {{ .Function }}}
+{{- end }}{{- end }}
+</tools>
+
+For each function call, write one json object with the function name and its arguments inside a ```json code block:
+```json
+{"name": <function-name>, "arguments": <args-json-object>}
+```
+{{- range .Tools }}{{ if eq .Function.Name "exec_command" }}
+For example, to list the files in the working directory:
+```json
+{"name": "exec_command", "arguments": {"cmd": "Get-ChildItem"}}
+```
+To write a file with two lines:
+```json
+{"name": "exec_command", "arguments": {"cmd": "python -c \"open('notes.txt', 'w').write('first line\\nsecond line\\n')\""}}
+```
+Rules for these tools:
+- Run one command per call, and wait for its output.
+- When the task is done, reply with a short message and no code block.
+{{- end }}{{ end }}
+{{- end }}<|im_end|>
+{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 -}}
+{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ if .Content }}{{ .Content }}
+{{- else if .ToolCalls }}{{ range .ToolCalls }}```json
+{"name": "{{ .Function.Name }}", "arguments": {{ .Function.Arguments }}}
+```
+{{ end }}
+{{- end }}{{ if not $last }}<|im_end|>
+{{ end }}
+{{- else if eq .Role "tool" }}<|im_start|>user
+<tool_response>
+{{ .Content }}
+</tool_response>
+That was the output of your last call. If the task is now complete, reply with one short sentence and no code block. Otherwise, make the next call.<|im_end|>
+{{ end }}
+{{- if and (ne .Role "assistant") $last }}<|im_start|>assistant
+{{ end }}
+{{- end }}
+{{- else }}
+{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+{{ end }}{{ .Response }}{{ if .Response }}<|im_end|>{{ end }}"""

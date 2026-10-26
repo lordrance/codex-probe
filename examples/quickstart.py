@@ -74,6 +74,7 @@ in openai mode, there is no signed-in CODEX_HOME, or it holds a config.toml.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
@@ -937,4 +938,8 @@ def run_openai(codex: str, env: dict[str, str], timeout: float, run_root: Path, 
 
 
 if __name__ == "__main__":
+    # A model's commands are printed as it wrote them. Sent to a file or a pipe, the output is
+    # encoded with Windows' code page, which may lack some of their characters: escape those.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(errors="backslashreplace")
     sys.exit(main())

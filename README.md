@@ -30,9 +30,11 @@ It is a solution to [Task 7](https://github.com/STAR-Computing/ProgrammingTask/b
 | Real Codex → CodexProbe → a scripted mock backend (not a model): a small coding task | **PASS**. Every recorded body is byte-identical to what the mock received and sent |
 | Real Codex → CodexProbe → OpenAI, signed in with ChatGPT: a one-word reply, and a coding task | **PASS**. The coding task took 3 LLM calls, all recorded in full |
 | Real Codex → CodexProbe → a local Qwen on Ollama: connection and recording | **PASS**. The request reached the local model byte for byte, and the reply was recorded in full |
-| Real Codex → CodexProbe → a local Qwen: the model's tool call creates a file | **Verified in additional experiments**, for one simple file ([VALIDATION.md](VALIDATION.md#additional-local-model-validation)) |
+| Real Codex → CodexProbe → a local Qwen 1.5B: the quickstart's coding task | **Not completed**. In 2 of 2 runs, and 4 earlier ones, the model wrote its tool calls as text, which Ollama does not parse with the published template ([VALIDATION.md](VALIDATION.md), Phase 4) |
+| Real Codex → CodexProbe → a local Qwen 1.5B with an adapted template (`Modelfile.tools`): a tool call that creates one file, with `examples/tool_call_check.py` | **PASS**, 3 of 3 runs, and 9 of 9 earlier ones. With greedy decoding, the runs gave the same output, and the template was tuned on this task ([VALIDATION.md](VALIDATION.md#additional-local-model-validation)) |
+| Real Codex → CodexProbe → a local Qwen3.5 2B with Ollama's own tool parser: the same check | **1 of 2 runs passed**, and 2 of 6 earlier ones (3 of 8 in all) ([VALIDATION.md](VALIDATION.md#additional-local-model-validation)) |
 
-The OpenAI runs and the one-word Qwen run used earlier versions of the quickstart, and were not repeated on the final code. The local tool-call runs used the final code, but through a separate test script that is not published, and with model settings other than `examples/ollama/Modelfile`; the quickstart does not reproduce them. [VALIDATION.md](VALIDATION.md) has the evidence for every row.
+The OpenAI runs and the one-word Qwen run (the *connection and recording* row) used earlier versions of the code, and were not repeated on the final code. In the other Qwen rows, the first count is of runs with the final code; the earlier runs counted after it used earlier code ([VALIDATION.md](VALIDATION.md#phase-5-the-published-code-from-a-clean-copy), *Which code the real runs used*). [VALIDATION.md](VALIDATION.md) has the evidence for every row.
 
 ## Quick start
 
@@ -115,11 +117,30 @@ ollama create codexprobe-qwen2.5-coder:1.5b -f examples/ollama/Modelfile
 
 The qwen mode first checks that Ollama 0.40.10 is running and that the model sets `num_ctx 16384`. Otherwise it stops with BLOCKED and runs nothing. It writes the Codex settings marked *qwen* under [Codex config](#codex-config).
 
+**What the coding task shows.** Without `--task text`, the qwen mode runs the coding task. In all six recorded runs with this Modelfile (two of them with the final code), the 1.5B model wrote its tool call as JSON inside a ```` ```json ```` block, which Ollama does not parse with this template, so Codex ran nothing and the run ended with FAIL. According to Ollama's source (not measured here), it samples at temperature 1.0 on this path, so the replies vary from run to run. [VALIDATION.md](VALIDATION.md), Phase 4, shows where tool calling breaks.
+
+**A one-file tool-call check.** `examples/ollama/Modelfile.tools` changes only the model side of the 1.5B model, so that its tool calls are parsed: greedy decoding, the ```` ```json ```` format, `write_stdin` hidden from the model's tool list, and short examples and rules. `examples/tool_call_check.py` then asks Codex to create `hello.txt` holding `QWEN_TOOL_OK`, and judges the run by eight checks ([VALIDATION.md](VALIDATION.md#additional-local-model-validation)). Like the qwen mode, it first checks Ollama's version and the model's `num_ctx`, writes the qwen settings with its `--model`, and uses the same exit codes:
+
+```powershell
+ollama create codexprobe-qwen2.5-coder-tools:1.5b -f examples/ollama/Modelfile.tools
+.venv\Scripts\python.exe examples\tool_call_check.py --model codexprobe-qwen2.5-coder-tools:1.5b --codex $codex --codex-home $codexHome
+```
+
+With Qwen3.5 2B and Ollama's own tool parser, a second download of 1.9 GB, the same check passed in 1 of 2 runs:
+
+```powershell
+ollama pull qwen3.5:2b-q4_K_M
+ollama create codexprobe-qwen3.5:2b -f examples/ollama/Modelfile.qwen35
+.venv\Scripts\python.exe examples\tool_call_check.py --model codexprobe-qwen3.5:2b --codex $codex --codex-home $codexHome
+```
+
+**Line endings and model IDs.** The Modelfiles keep Windows (CRLF) line endings, and `.gitattributes` stops git from converting them: Ollama keeps the line endings in the template, and the models of the final validation runs were built with them. Built from these files with Ollama 0.40.10, the models had these IDs in `ollama list` on the test machine, as in the final validation runs: `codexprobe-qwen2.5-coder:1.5b` `e95c1d931efc`, `codexprobe-qwen2.5-coder-tools:1.5b` `484587ece90a` and `codexprobe-qwen3.5:2b` `3c6d247cca28`.
+
 **Hardware.** The 1.5B model with a 16K context took about 1.6 GB of GPU memory, and about 1 GB of disk. It was tested on an RTX 3050 Laptop GPU with 4 GB. That GPU is why the 1.5B model was used: the task's example, Qwen2.5-Coder-7B, is about a 4.7 GB download even in its 4-bit build (Ollama's model library; not measured here).
 
 **The [Modelfile](examples/ollama/Modelfile)** reuses the weights of `qwen2.5-coder:1.5b` and changes three things:
 1. Codex sends its instructions as `developer` messages, which the base template drops without an error ([ollama#18305](https://github.com/ollama/ollama/issues/18305)). The new template adds them to the system prompt.
-2. Tool calls are asked for as a bare JSON object instead of inside `<tool_call>` tags. Ollama parses a reply that starts with a JSON object as a tool call.
+2. Tool calls are asked for as a bare JSON object instead of inside `<tool_call>` tags. Ollama parses a reply that starts with a JSON object as a tool call. In the recorded runs, the 1.5B model did not follow this: it wrapped the JSON in a ```` ```json ```` block, which Ollama returns as text. `Modelfile.tools` asks for that block instead.
 3. `num_ctx 16384`. On the test GPU, Ollama's default context was 4096 tokens, and according to Ollama's source (not measured here), a longer prompt loses its start. One Codex request was over 5,100 tokens.
 
 ## Codex config
@@ -251,8 +272,8 @@ A real Codex call is large. Each request carries Codex's instructions (as `devel
 
 ## Responses vs. Chat Completions
 
-- **Chat Completions** (`POST /v1/chat/completions`) takes a list of `messages`, and streams `choices[].delta` chunks; tool calls arrive as `tool_calls` fragments.
-- **Responses** (`POST /v1/responses`) takes typed `input` items, such as messages with roles including `developer`, `function_call`, `function_call_output` and reasoning. It streams typed events, such as `response.output_item.done` and `response.completed`.
+- **Chat Completions** (`POST /v1/chat/completions`) takes a list of `messages`, and streams `choices[].delta` chunks. Tool calls arrive as `tool_calls` fragments; a tool's result goes back as a `role: "tool"` message with its `tool_call_id`; the stream ends with a `finish_reason` and `data: [DONE]`.
+- **Responses** (`POST /v1/responses`) takes a list of typed `input` items: messages (with roles such as `system`, `developer`, `user` and `assistant`), and `function_call`, `function_call_output` and `reasoning` items. A tool's result goes back as a `function_call_output` item with its `call_id`. It streams typed events, such as `response.output_item.done`, and ends with a terminal event: `response.completed` (with the usage), `response.incomplete` or `response.failed`.
 
 The task text says local servers speak Chat Completions. But Codex dropped Chat Completions in version 0.95.0, and in 0.164.0 `wire_api = "responses"` is the only accepted value. Ollama serves `/v1/responses` itself, since v0.13.3. So CodexProbe forwards Codex's requests unchanged and translates nothing. These facts come from the Codex and Ollama sources and release notes.
 
@@ -262,7 +283,7 @@ The task text says local servers speak Chat Completions. But Codex dropped Chat 
 .venv\Scripts\python.exe -m pytest -q tests          # 349 passed, 1 deselected; no network, model or Codex needed
 ```
 
-They cover config validation; byte-for-byte passthrough of JSON, SSE and HTTP errors; SSE split at every byte position; live relay and slow backends; a client that hangs up before the reply, mid-stream or after `response.completed`, and `stop()` before the reply or mid-stream; the log schema, redaction and `load_session`; and the quickstart's checks, each one shown to fail on bad evidence. The deselected test runs the real Codex against the mock:
+They cover config validation; byte-for-byte passthrough of JSON, SSE and HTTP errors; SSE split at every byte position; live relay and slow backends; a client that hangs up before the reply, mid-stream or after `response.completed`, and `stop()` before the reply or mid-stream; the log schema, redaction and `load_session`; and the quickstart's checks, each one shown to fail on bad evidence. `examples/tool_call_check.py` reuses six of those checks; its file check and time limit have no offline tests. The deselected test runs the real Codex against the mock:
 
 ```powershell
 $env:CODEXPROBE_CODEX = $codex; $env:CODEXPROBE_CODEX_HOME = $codexHome
@@ -296,13 +317,15 @@ Exit codes: 0 PASS, 1 FAIL, 2 bad arguments, 3 BLOCKED. BLOCKED means that somet
 | `src/codex_probe/e2e_validation.py` | The checker for real Codex runs against the mock; `scripts/verify_e2e.py` is its command line |
 | `src/codex_probe/codex_run.py` | Codex's config, and a guarded `codex exec` |
 | `examples/quickstart.py` | The mock, openai and qwen demos |
+| `examples/tool_call_check.py` | A one-file tool-call check against a local model |
 | `examples/ollama/Modelfile` | The derived Qwen model |
+| `examples/ollama/Modelfile.tools`, `examples/ollama/Modelfile.qwen35` | The models for the tool-call check |
 | `tests/` | The test suite |
 
 ## Limitations
 
 - Tested on one Windows 11 machine. macOS and Linux were not tested.
-- With the small local models that fit the test machine's 4 GB GPU (1.5B and 2B parameters), tool execution was verified only for creating one file ([VALIDATION.md](VALIDATION.md#additional-local-model-validation)).
+- With the small local models that fit the test machine's 4 GB GPU (1.5B and 2B parameters), tool execution was verified only for creating one file, and the coding task did not complete ([VALIDATION.md](VALIDATION.md#additional-local-model-validation)).
 - OpenAI was tested only through a ChatGPT sign-in, not with an API key. To use a `base_url`, Codex needs a custom provider, which talks HTTP and SSE rather than WebSockets. So a capture is not identical to the traffic of Codex's built-in OpenAI provider.
 - Logs hold complete prompts, which may include workspace files. With OpenAI, the response headers also carry account details, such as the plan and usage. Credential headers are redacted, but keep logs private.
 - CodexProbe ignores `HTTP_PROXY` and `HTTPS_PROXY` (httpx `trust_env=False`), so it cannot reach OpenAI on a network that requires an outbound proxy. This was not tested.

@@ -1,17 +1,22 @@
 # CodexProbe: qwen2.5-coder:1.5b, adjusted for Codex through Ollama's /v1/responses.
 # Create it with:  ollama create codexprobe-qwen2.5-coder:1.5b -f Modelfile
 #
-# Three changes from the base model (ollama 0.40.10), nothing else:
+# Three changes from the base model (ollama 0.40.10), apart from the line endings noted
+# at the end of this comment:
 # 1. Codex sends its instructions as "developer" messages. The base Go template has
 #    no branch for that role, so Ollama dropped them without an error (ollama#18305).
 #    This template appends them to the system block, after the system prompt.
 # 2. Tool calls are bare JSON objects. The template asks for {"name": ...,
 #    "arguments": ...} without the <tool_call> tags of the base template, and Ollama
-#    parses a reply that starts with a JSON object as a tool call.
+#    parses a reply that starts with a JSON object as a tool call. In the recorded
+#    runs, the 1.5B model wrapped the JSON in a ```json block instead, which Ollama
+#    returns as text; Modelfile.tools asks for that block.
 # 3. num_ctx 16384. On a GPU with less than 24 GiB, Ollama defaults to 4096 and cuts
 #    a longer prompt from the front, also without an error. Codex's
 #    model_context_window must be set to the same value.
-# The rest of the template is the base template, byte for byte.
+# The rest of the template is the base template's text. This file keeps Windows (CRLF)
+# line endings (see .gitattributes): Ollama keeps them in the template, and the model
+# of the final validation runs was built with them.
 FROM qwen2.5-coder:1.5b
 PARAMETER num_ctx 16384
 TEMPLATE """{{- if .Suffix }}<|fim_prefix|>{{ .Prompt }}<|fim_suffix|>{{ .Suffix }}<|fim_middle|>

@@ -1,0 +1,66 @@
+# CodexProbe: qwen2.5-coder:1.5b, adjusted for Codex through Ollama's /v1/responses.
+# Create it with:  ollama create codexprobe-qwen2.5-coder:1.5b -f Modelfile
+#
+# Three changes from the base model (ollama 0.40.10), nothing else:
+# 1. Codex sends its instructions as "developer" messages. The base Go template has
+#    no branch for that role, so Ollama dropped them without an error (ollama#18305).
+#    This template appends them to the system block, after the system prompt.
+# 2. Tool calls are bare JSON objects. The template asks for {"name": ...,
+#    "arguments": ...} without the <tool_call> tags of the base template, and Ollama
+#    parses a reply that starts with a JSON object as a tool call.
+# 3. num_ctx 16384. On a GPU with less than 24 GiB, Ollama defaults to 4096 and cuts
+#    a longer prompt from the front, also without an error. Codex's
+#    model_context_window must be set to the same value.
+# The rest of the template is the base template, byte for byte.
+FROM qwen2.5-coder:1.5b
+PARAMETER num_ctx 16384
+TEMPLATE """{{- if .Suffix }}<|fim_prefix|>{{ .Prompt }}<|fim_suffix|>{{ .Suffix }}<|fim_middle|>
+{{- else if .Messages }}
+{{- $instructions := .System }}
+{{- range .Messages }}{{ if eq .Role "developer" }}{{ if $instructions }}{{ $instructions = printf "%s\n\n%s" $instructions .Content }}{{ else }}{{ $instructions = .Content }}{{ end }}{{ end }}{{ end }}
+{{- if or $instructions .Tools }}<|im_start|>system
+{{- if $instructions }}
+{{ $instructions }}
+{{- end }}
+{{- if .Tools }}
+
+# Tools
+
+You may call one or more functions to assist with the user query.
+
+You are provided with function signatures within <tools></tools>:
+<tools>
+{{- range .Tools }}
+{"type": "function", "function": {{ .Function }}}
+{{- end }}
+</tools>
+
+For each function call, return a json object with function name and arguments with NO other text. Do not include any backticks or ```json.
+{"name": <function-name>, "arguments": <args-json-object>}
+{{- end }}<|im_end|>
+{{ end }}
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 -}}
+{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ else if eq .Role "assistant" }}<|im_start|>assistant
+{{ if .Content }}{{ .Content }}
+{{- else if .ToolCalls }}{{ range .ToolCalls }}{"name": "{{ .Function.Name }}", "arguments": {{ .Function.Arguments }}}
+{{ end }}
+{{- end }}{{ if not $last }}<|im_end|>
+{{ end }}
+{{- else if eq .Role "tool" }}<|im_start|>user
+<tool_response>
+{{ .Content }}
+</tool_response><|im_end|>
+{{ end }}
+{{- if and (ne .Role "assistant") $last }}<|im_start|>assistant
+{{ end }}
+{{- end }}
+{{- else }}
+{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+{{ end }}{{ .Response }}{{ if .Response }}<|im_end|>{{ end }}"""

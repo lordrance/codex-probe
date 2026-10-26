@@ -1,0 +1,20 @@
+# Local environments, caches and build output
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Run output: real logs contain full prompts, keep them out of git
+runs/
+*.log
+
+# Model files
+*.gguf
+*.safetensors
+
+# Credentials
+.env
+.env.*
+auth.json
